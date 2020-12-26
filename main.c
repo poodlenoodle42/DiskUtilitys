@@ -110,12 +110,34 @@ union GPT_Header readTableHeader(FILE * disk, const int headerNumber, const int 
     return header;
 }
 
+void writeGPT(FILE * disk,const union GPT_Header * header, const union GPT_Entry * entrys, int sectorsize,int headerNumber){ // 0 - Rewrites Primary Sector, 1 - Rewrites Backup Sector
+    if(headerNumber == 0){
+        fseek(disk,sectorsize*1,SEEK_SET);
+        fwrite(header->buffer,92,1,disk); //Writes Header
+        fseek(disk,header->startOfTable*sectorsize,SEEK_SET);
+        fwrite(entrys->buffer,header->numberofPartitionEntrys*header->sizeofEntry,1,disk);
+    } else if(headerNumber == 1){
+        fseek(disk,-sectorsize*1,SEEK_END);
+        fwrite(header->buffer,92,1,disk); //Writes Header
+        fseek(disk,header->startOfTable*sectorsize,SEEK_SET);
+        fwrite(entrys->buffer,header->numberofPartitionEntrys*header->sizeofEntry,1,disk);
+    }
+}
+
+void convertBackupGPTtoPrimary(union GPT_Header* header){
+    u_int64_t primaryPos = header->otherGPTlocation;
+    header->otherGPTlocation = header->thisGPTlocation;
+    header->thisGPTlocation = primaryPos;
+    header->startOfTable = 2;
+}
+
 int main(){
+
     const int sectorsize = 512;
     FILE * disk;
     u_int8_t block[sectorsize];
     int err;
-    disk = fopen("/dev/sdh","rb");
+    disk = fopen("diskimage.img","rb+");
     if(disk == NULL) exit(EXIT_FAILURE);
     union GPT_Header header = readTableHeader(disk,1,sectorsize);
     union GPT_Entry* entrys = malloc(sizeof(union GPT_Entry) * header.numberofPartitionEntrys);
@@ -124,10 +146,9 @@ int main(){
     for(int i = 0;i<header.numberofPartitionEntrys;i++){
         printGPTEntry(&entrys[i]);
     }
-    union GPT_Header headerCRCzero = header;
-    headerCRCzero.CRC32_header = 0;
-    //headerCRCzero.CRC32_partitionarray = 0;
-
+    convertBackupGPTtoPrimary(&header);
+    writeGPT(disk,&header,entrys,sectorsize,0);
+    //printf("Wrote PartitionTable successfully");
     free(entrys);
     return 0;
 }
