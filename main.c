@@ -36,46 +36,54 @@ union GPT_Header{
 };
 
 //From https://stackoverflow.com/questions/21001659/crc32-algorithm-implementation-in-c-without-a-look-up-table-and-with-a-public-li
-u_int32_t crc32b(u_int8_t *message) {
+u_int32_t crc32b(u_int8_t *message, uint size) {
    int i, j;
    u_int32_t byte, crc, mask;
-
-   i = 0;
    crc = 0xFFFFFFFF;
-   while (message[i] != 0) {
+   for(i = 0; i<size;i++) {
       byte = message[i];            // Get next byte.
       crc = crc ^ byte;
       for (j = 7; j >= 0; j--) {    // Do eight times.
          mask = -(crc & 1);
          crc = (crc >> 1) ^ (0xEDB88320 & mask);
       }
-      i = i + 1;
    }
    return ~crc;
 }
 
+bool isGPTHeaderVaild(const union GPT_Header * h){
+    union GPT_Header headerCRCzero = *h;
+    headerCRCzero.CRC32_header = 0;
+    return h->signature == 0x5452415020494645ULL && h->reserved == 0 && crc32b(headerCRCzero.buffer,h->headersize) == h->CRC32_header;
+}
 
 void printGPTHeader(const union GPT_Header * h){
     printf("Signature: %08lX\n", h->signature);
     printf("Revision: %08X\n",h->revision);
     printf("HeaderSize: %d Bytes\n",h->headersize);
     printf("Number of Partitions: %d\n",h->numberofPartitionEntrys);
+    if(isGPTHeaderVaild(h)){
+        printf("Header is valid\n");
+    } else {
+        printf("Header is not valid");
+    }
 }
 
 void printGPTEntry(const union GPT_Entry * e){
-    printf("Partition\n");
-    printf("\tStart of Partition: %ld\n", e->firstBlock);
-    printf("\tLast Block: %ld\n", e->lastBlock);
-    printf("\tName: ");
-    for(int i = 0; i<36;i++){
-        printf("%c",(char)e->name[i]);
+    if(e->firstBlock != 0){ //Otherwise Partition can not be valid
+        printf("Partition\n");
+        printf("\tStart of Partition: %ld\n", e->firstBlock);
+        printf("\tLast Block: %ld\n", e->lastBlock);
+        printf("\tSize: %d Sectors\n", (e->lastBlock - e->firstBlock));
+        printf("\tName: ");
+        for(int i = 0; i<36;i++){
+            printf("%c",(char)e->name[i]);
+        }
+        printf("\n");
     }
-    printf("\n");
 }
 
-bool isGPTHeaderVaild(const union GPT_Header * h){
-    return h->signature == 0x5452415020494645ULL && h->reserved == 0;
-}
+
 
 void readTableEntrys(FILE * disk, const union GPT_Header * header, union GPT_Entry * tableBuffer, int sectorsize){
     fseek(disk,header->startOfTable*sectorsize,SEEK_SET);
@@ -96,7 +104,8 @@ union GPT_Header readTableHeader(FILE * disk, const int headerNumber, const int 
         fseek(disk,sectorSize*1,SEEK_SET);
         fread(header.buffer,92,1,disk);
     } else if (headerNumber == 1){
-        //ToDo
+        fseek(disk,-sectorSize*1,SEEK_END);
+        fread(header.buffer,92,1,disk);
     }
     return header;
 }
@@ -106,9 +115,9 @@ int main(){
     FILE * disk;
     u_int8_t block[sectorsize];
     int err;
-    disk = fopen("diskimage.img","rb");
+    disk = fopen("/dev/sdh","rb");
     if(disk == NULL) exit(EXIT_FAILURE);
-    union GPT_Header header = readTableHeader(disk,0,sectorsize);
+    union GPT_Header header = readTableHeader(disk,1,sectorsize);
     union GPT_Entry* entrys = malloc(sizeof(union GPT_Entry) * header.numberofPartitionEntrys);
     readTableEntrys(disk,&header,entrys,sectorsize);
     printGPTHeader(&header);
@@ -117,10 +126,8 @@ int main(){
     }
     union GPT_Header headerCRCzero = header;
     headerCRCzero.CRC32_header = 0;
-    headerCRCzero.CRC32_partitionarray = 0;
-    if(crc32b(headerCRCzero.buffer) == header.CRC32_header){
-        printf("CRC32 Valid\n");
-    }
+    //headerCRCzero.CRC32_partitionarray = 0;
+
     free(entrys);
     return 0;
 }
