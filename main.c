@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-
+#include <string.h>
 
 union GPT_Entry{
     struct{
@@ -132,13 +132,22 @@ void convertBackupGPTtoPrimary(union GPT_Header* header){
 }
 
 int main(){
-
-    const int sectorsize = 512;
+    int sectorsize = 512;
+    char diskPathBuffer[512] = {0};
+    printf("Path to Disk: \n");
+    scanf("%s", diskPathBuffer);
+    char * diskPath = malloc(strlen(diskPathBuffer));
+    strcpy(diskPath,diskPathBuffer);
+    printf("Sector size?\n");
+    scanf("%d",&sectorsize);
     FILE * disk;
-    u_int8_t block[sectorsize];
     int err;
-    disk = fopen("diskimage.img","rb+");
-    if(disk == NULL) exit(EXIT_FAILURE);
+    disk = fopen(diskPath,"rb+");
+    if(disk == NULL){
+        printf("File not found\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("Read Backup table...\n");
     union GPT_Header header = readTableHeader(disk,1,sectorsize);
     union GPT_Entry* entrys = malloc(sizeof(union GPT_Entry) * header.numberofPartitionEntrys);
     readTableEntrys(disk,&header,entrys,sectorsize);
@@ -146,9 +155,18 @@ int main(){
     for(int i = 0;i<header.numberofPartitionEntrys;i++){
         printGPTEntry(&entrys[i]);
     }
-    convertBackupGPTtoPrimary(&header);
-    writeGPT(disk,&header,entrys,sectorsize,0);
-    //printf("Wrote PartitionTable successfully");
+    printf("Do you want to overwrite the primary GPT with this one? Continue on your own risk! [y|n]\n");
+    char an;
+    scanf(" %c",&an);
+    if(an == 'y'){
+        convertBackupGPTtoPrimary(&header);
+        writeGPT(disk,&header,entrys,sectorsize,0);
+        printf("Wrote PartitionTable successfully");
+    } else if (an == 'n'){
+        printf("Aborting\n");
+    } else {
+        printf("Invalid answer");
+    }
     free(entrys);
     return 0;
 }
