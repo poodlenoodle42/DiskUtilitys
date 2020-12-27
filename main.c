@@ -129,6 +129,8 @@ void convertBackupGPTtoPrimary(union GPT_Header* header){
     header->otherGPTlocation = header->thisGPTlocation;
     header->thisGPTlocation = primaryPos;
     header->startOfTable = 2;
+    header->CRC32_header = 0;
+    header->CRC32_header = crc32b(header->buffer,header->headersize);
 }
 
 int main(){
